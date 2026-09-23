@@ -14,7 +14,7 @@ export function clearSessionToken() {
 }
 
 type ApiRequestOptions = {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PUT";
   body?: unknown;
   token?: string | null;
 };
@@ -25,7 +25,7 @@ export async function apiRequest<TResponse>(
 ): Promise<TResponse> {
   const headers = new Headers();
 
-  if (body !== undefined) {
+  if (body !== undefined && !(body instanceof FormData)) {
     headers.set("content-type", "application/json");
   }
 
@@ -36,7 +36,7 @@ export async function apiRequest<TResponse>(
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -49,4 +49,12 @@ export async function apiRequest<TResponse>(
 
 export function apiGet<TResponse>(path: string): Promise<TResponse> {
   return apiRequest<TResponse>(path);
+}
+
+export function apiPost<TResponse>(path: string, body: unknown): Promise<TResponse> {
+  return apiRequest<TResponse>(path, { method: "POST", body });
+}
+
+export function apiPut<TResponse>(path: string, body: unknown): Promise<TResponse> {
+  return apiRequest<TResponse>(path, { method: "PUT", body });
 }

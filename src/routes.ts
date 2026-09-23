@@ -5,7 +5,8 @@ export type RouteKey =
   | "recipes"
   | "products"
   | "inventory-requests"
-  | "store-manager";
+  | "store-manager"
+  | "store-employees";
 
 export type AppRoute = {
   key: RouteKey;
@@ -81,11 +82,30 @@ export const appRoutes: AppRoute[] = [
     description: "Reserved workspace for store-level daily operations in upcoming tasks.",
     area: "Store Manager",
   },
+  {
+    key: "store-employees",
+    path: "/store-manager/employees",
+    label: "Employees",
+    eyebrow: "Store Team",
+    title: "Employees",
+    description: "View employees assigned to your store.",
+    area: "Store Manager",
+  },
 ];
 
 export const defaultRoute = appRoutes[0];
 
 export function findRoute(pathname: string, routes: AppRoute[] = appRoutes) {
   const normalizedPath = pathname === "/" ? defaultRoute.path : pathname.replace(/\/$/, "");
-  return routes.find((route) => route.path === normalizedPath) ?? routes[0] ?? defaultRoute;
+  const exactRoute = routes.find((route) => route.path === normalizedPath);
+
+  if (exactRoute) {
+    return exactRoute;
+  }
+
+  const nestedRoute = routes
+    .filter((route) => normalizedPath.startsWith(`${route.path}/`))
+    .sort((first, second) => second.path.length - first.path.length)[0];
+
+  return nestedRoute ?? routes[0] ?? defaultRoute;
 }

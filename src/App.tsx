@@ -155,7 +155,7 @@ export function App() {
     >
       {apiNotice}
       {isRouteAllowed ? (
-        <ResourcePage route={activeRoute} user={user} />
+        <ResourcePage pathname={pathname} route={activeRoute} user={user} onNavigate={handleNavigate} />
       ) : (
         <ErrorState title="Unauthorized" message="You do not have access to this dashboard area." />
       )}
