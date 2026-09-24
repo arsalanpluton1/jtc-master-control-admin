@@ -6,6 +6,7 @@ export type RouteKey =
   | "products"
   | "inventory-requests"
   | "store-manager"
+  | "manager-inventory-requests"
   | "store-employees";
 
 export type AppRoute = {
@@ -80,6 +81,15 @@ export const appRoutes: AppRoute[] = [
     eyebrow: "Store Manager Workspace",
     title: "Store Manager",
     description: "Reserved workspace for store-level daily operations in upcoming tasks.",
+    area: "Store Manager",
+  },
+  {
+    key: "manager-inventory-requests",
+    path: "/store-manager/inventory-requests",
+    label: "Inventory Requests",
+    eyebrow: "Replenishment",
+    title: "Inventory Requests",
+    description: "Request replenishment for inventory items assigned to your store.",
     area: "Store Manager",
   },
   {

@@ -2,24 +2,38 @@ import { type ChangeEvent, type FormEvent, type ReactNode, useEffect, useState }
 import {
   accountStatusOptions,
   assignStoreManager,
+  createAdminInventoryItem,
   createAdminStation,
   createAdminStore,
   createStoreEmployee,
+  decideAdminInventoryRequest,
+  fulfillAdminInventoryRequest,
   getAdminOverview,
+  getAdminInventory,
+  getAdminInventoryItem,
+  getAdminInventoryRequests,
   getAdminStation,
   getAdminStations,
   getAdminStore,
   getAdminStoreEmployee,
   getAdminStoreEmployees,
   getAdminStores,
+  inventoryItemStatusOptions,
+  inventoryStockStatusOptions,
+  inventoryUnitOptions,
   managerRoleOptions,
   stationStatusOptions,
   storeEmployeeRoleOptions,
   storeEmployeeStatusOptions,
   storeStatusOptions,
   storeTypeOptions,
+  updateAdminInventoryStock,
   updateAdminStore,
   type AdminOverview,
+  type AdminInventoryItem,
+  type AdminInventoryRequest,
+  type AdminInventoryPackagingLevel,
+  type AdminInventoryStoreStock,
   type AdminStation,
   type AdminStore,
   type AdminStoreDetail,
@@ -30,13 +44,30 @@ import {
   type AssignStoreManagerInput,
   type CreateAdminStationInput,
   type CreateAdminStoreInput,
+  type CreateAdminInventoryItemInput,
   type CreateStoreEmployeeInput,
   type UpdateAdminStoreInput,
+  type UpdateAdminInventoryItemInput,
+  updateAdminInventoryItem,
 } from "../api/admin";
 import type { SessionUser } from "../api/auth";
-import { getManagerStoreEmployee, getManagerStoreEmployees, getStoreSummary, type StoreSummary } from "../api/manager";
+import {
+  createManagerInventoryRequest,
+  getManagerInventoryRequests,
+  getManagerStoreEmployee,
+  getManagerStoreEmployees,
+  getManagerStoreInventory,
+  getManagerStoreStations,
+  getStoreSummary,
+  type ManagerInventoryRecord,
+  type ManagerInventoryRequest,
+  type ManagerStationOption,
+  type StoreSummary,
+} from "../api/manager";
 import { EmptyState, ErrorState, LoadingState } from "../components/PageStates";
 import type { AppRoute } from "../routes";
+import { ProductManagementPage } from "./ProductManagementPage";
+import { RecipeManagementPage } from "./RecipeManagementPage";
 
 type ScreenType = "list" | "detail" | "create" | "edit";
 
@@ -44,6 +75,8 @@ const screenTypes: ScreenType[] = ["list", "detail", "create", "edit"];
 const storeCreatedMessageKey = "jtc-store-created-message";
 const storeUpdatedMessageKey = "jtc-store-updated-message";
 const stationCreatedMessageKey = "jtc-station-created-message";
+const inventoryCreatedMessageKey = "jtc-inventory-created-message";
+const inventoryPackagingUpdatedMessageKey = "jtc-inventory-packaging-updated-message";
 
 type ResourcePageProps = {
   pathname: string;
@@ -61,11 +94,486 @@ export function ResourcePage({ pathname, route, user, onNavigate }: ResourcePage
     return <StationManagementPage pathname={pathname} onNavigate={onNavigate} />;
   }
 
+  if (route.key === "inventory") {
+    return <InventoryManagementPage pathname={pathname} onNavigate={onNavigate} />;
+  }
+
+  if (route.key === "products") {
+    return <ProductManagementPage pathname={pathname} onNavigate={onNavigate} />;
+  }
+
+  if (route.key === "recipes") {
+    return <RecipeManagementPage pathname={pathname} onNavigate={onNavigate} />;
+  }
+
+  if (route.key === "inventory-requests") {
+    return <AdminInventoryRequestPage />;
+  }
+
   if (route.key === "store-employees") {
     return <ManagerEmployeesPage pathname={pathname} user={user} onNavigate={onNavigate} />;
   }
 
+  if (route.key === "manager-inventory-requests") {
+    return <ManagerInventoryRequestPage user={user} onNavigate={onNavigate} />;
+  }
+
+  if (route.key === "store-manager") {
+    return <StoreManagerWorkspacePage user={user} onNavigate={onNavigate} />;
+  }
+
   return <ProtectedResourcePage route={route} user={user} />;
+}
+
+type ManagerRequestLineForm = {
+  inventoryItemId: string;
+  requestedQuantity: string;
+};
+
+function ManagerInventoryRequestPage({ user, onNavigate }: { user: SessionUser; onNavigate: (path: string) => void }) {
+  const storeId = user.storeId;
+  const [inventory, setInventory] = useState<ManagerInventoryRecord[]>([]);
+  const [stations, setStations] = useState<ManagerStationOption[]>([]);
+  const [requests, setRequests] = useState<ManagerInventoryRequest[]>([]);
+  const [lines, setLines] = useState<ManagerRequestLineForm[]>([{ inventoryItemId: "", requestedQuantity: "" }]);
+  const [stationId, setStationId] = useState("");
+  const [notes, setNotes] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!storeId) {
+      setIsLoading(false);
+      return;
+    }
+
+    const assignedStoreId = storeId;
+
+    let isMounted = true;
+
+    async function loadRequestData() {
+      setIsLoading(true);
+      setLoadError(null);
+
+      try {
+        const [inventoryData, stationData, requestData] = await Promise.all([
+          getManagerStoreInventory(assignedStoreId),
+          getManagerStoreStations(assignedStoreId),
+          getManagerInventoryRequests(assignedStoreId),
+        ]);
+
+        if (isMounted) {
+          setInventory(inventoryData.inventory);
+          setStations(stationData.stations);
+          setRequests(requestData.requests);
+        }
+      } catch (loadRequestError) {
+        if (isMounted) {
+          setLoadError(loadRequestError instanceof Error ? loadRequestError.message : "Unable to load inventory requests");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadRequestData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [storeId]);
+
+  function updateLine(index: number, field: keyof ManagerRequestLineForm, value: string) {
+    setLines((current) => current.map((line, lineIndex) => lineIndex === index ? { ...line, [field]: value } : line));
+    setSubmitError(null);
+    setSuccessMessage(null);
+  }
+
+  function addLine() {
+    setLines((current) => [...current, { inventoryItemId: "", requestedQuantity: "" }]);
+  }
+
+  function removeLine(index: number) {
+    setLines((current) => current.length === 1 ? current : current.filter((_line, lineIndex) => lineIndex !== index));
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitError(null);
+    setSuccessMessage(null);
+
+    const normalizedLines = lines.map((line) => ({
+      inventoryItemId: line.inventoryItemId,
+      requestedQuantity: Number(line.requestedQuantity),
+    }));
+
+    if (normalizedLines.some((line) => !line.inventoryItemId || !Number.isFinite(line.requestedQuantity) || line.requestedQuantity <= 0)) {
+      setSubmitError("Select an inventory item and enter a quantity greater than 0 for every line.");
+      return;
+    }
+
+    if (new Set(normalizedLines.map((line) => line.inventoryItemId)).size !== normalizedLines.length) {
+      setSubmitError("Each inventory item may only appear once in a request.");
+      return;
+    }
+
+    if (!storeId) {
+      setSubmitError("Your account is not assigned to a store.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const data = await createManagerInventoryRequest(storeId, {
+        stationId: stationId || undefined,
+        notes: notes.trim() || undefined,
+        items: normalizedLines,
+      });
+      setRequests((current) => [data.request, ...current]);
+      setLines([{ inventoryItemId: "", requestedQuantity: "" }]);
+      setStationId("");
+      setNotes("");
+      setSuccessMessage(`${data.request.requestNumber} was submitted successfully.`);
+    } catch (createError) {
+      setSubmitError(createError instanceof Error ? createError.message : "Unable to submit inventory request");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (!storeId) {
+    return <ErrorState title="Store assignment required" message="Your Store Manager account is not assigned to a store." />;
+  }
+
+  return (
+    <div className="page-stack">
+      <div className="resource-toolbar">
+        <div>
+          <p className="eyebrow">Store Manager Replenishment</p>
+          <h2>Inventory requests</h2>
+        </div>
+        <button type="button" className="secondary-button" onClick={() => onNavigate("/store-manager")}>Back to workspace</button>
+      </div>
+      {isLoading ? <LoadingState title="Loading inventory requests" message="Preparing store inventory and request history..." /> : null}
+      {loadError ? <ErrorState title="Inventory requests unavailable" message={loadError} /> : null}
+      {successMessage ? <SuccessState title="Request submitted" message={successMessage} /> : null}
+      {!isLoading && !loadError ? (
+        <>
+          <form className="store-form" onSubmit={handleSubmit} noValidate>
+            <section aria-label="Create inventory request">
+              <h3>Request replenishment</h3>
+              <p className="form-hint">Choose the inventory items and quantities needed for your store. Requests are submitted for review.</p>
+              {lines.map((line, index) => (
+                <div className="form-grid" key={index}>
+                  <label className="form-field">
+                    <span>Inventory item *</span>
+                    <select value={line.inventoryItemId} onChange={(event) => updateLine(index, "inventoryItemId", event.target.value)}>
+                      <option value="">Select inventory item</option>
+                      {inventory.map((record) => (
+                        <option key={record.inventoryItemId} value={record.inventoryItemId}>
+                          {record.item.name} ({record.item.sku}) · On hand {record.quantityOnHand}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="form-field">
+                    <span>Requested quantity *</span>
+                    <input type="number" min="0.000001" step="0.000001" value={line.requestedQuantity} onChange={(event) => updateLine(index, "requestedQuantity", event.target.value)} />
+                  </label>
+                  {lines.length > 1 ? <button type="button" className="secondary-button" onClick={() => removeLine(index)}>Remove item</button> : null}
+                </div>
+              ))}
+              <button type="button" className="secondary-button" onClick={addLine}>Add inventory item</button>
+            </section>
+            <section aria-label="Request details">
+              <h3>Request details</h3>
+              <div className="form-grid">
+                <label className="form-field">
+                  <span>Station</span>
+                  <select value={stationId} onChange={(event) => setStationId(event.target.value)}>
+                    <option value="">No station specified</option>
+                    {stations.filter((station) => station.status === "active").map((station) => (
+                      <option key={station._id} value={station._id}>{station.name} ({station.code})</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="form-field">
+                  <span>Notes</span>
+                  <textarea value={notes} maxLength={1000} onChange={(event) => setNotes(event.target.value)} placeholder="Optional request notes" />
+                </label>
+              </div>
+            </section>
+            {submitError ? <ErrorState title="Request not submitted" message={submitError} /> : null}
+            <div className="form-actions">
+              <button type="submit" disabled={isSubmitting}>{isSubmitting ? "Submitting..." : "Submit Request"}</button>
+            </div>
+          </form>
+          <ManagerInventoryRequestHistory requests={requests} />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function ManagerInventoryRequestHistory({ requests }: { requests: ManagerInventoryRequest[] }) {
+  return (
+    <section className="related-panel" aria-label="Inventory request history">
+      <h3>Request history</h3>
+      {requests.length === 0 ? <p>No inventory requests have been submitted for this store.</p> : (
+        <div className="related-list">
+          {requests.map((request) => (
+            <article className="related-row" key={request._id}>
+              <div>
+                <strong>{request.requestNumber}</strong>
+                <span>{request.lines.length} item{request.lines.length === 1 ? "" : "s"} · {formatOptionalDate(request.submittedAt ?? request.createdAt)}</span>
+                {request.notes ? <span>{request.notes}</span> : null}
+              </div>
+              <div>
+                <StatusPill>{formatTitle(request.status)}</StatusPill>
+                {request.lines.map((line) => (
+                  <span key={line._id}>{line.item?.name ?? "Item unavailable"}: {line.requestedQuantity} {line.item?.baseUnit ?? "units"}</span>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AdminInventoryRequestPage() {
+  const [requests, setRequests] = useState<AdminInventoryRequest[]>([]);
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [decisionNotes, setDecisionNotes] = useState("");
+  const [fulfillmentQuantities, setFulfillmentQuantities] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadRequests() {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const data = await getAdminInventoryRequests();
+
+        if (isMounted) {
+          setRequests(data.requests);
+          setSelectedRequestId(data.requests[0]?._id ?? null);
+        }
+      } catch (loadError) {
+        if (isMounted) {
+          setError(loadError instanceof Error ? loadError.message : "Unable to load inventory requests");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadRequests();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const selectedRequest = requests.find((request) => request._id === selectedRequestId) ?? null;
+
+  useEffect(() => {
+    if (!selectedRequest) {
+      setFulfillmentQuantities({});
+      return;
+    }
+
+    setFulfillmentQuantities(
+      Object.fromEntries(
+        selectedRequest.lines
+          .filter((line) => line.status === "approved" || line.status === "partially_fulfilled")
+          .map((line) => [line._id, ""]),
+      ),
+    );
+  }, [selectedRequestId, requests]);
+
+  async function handleDecision(decision: "approve" | "reject") {
+    if (!selectedRequest) {
+      return;
+    }
+
+    setActionError(null);
+    setSuccessMessage(null);
+    setIsSubmitting(true);
+
+    try {
+      const data = await decideAdminInventoryRequest(selectedRequest._id, decision, decisionNotes.trim() || undefined);
+      setRequests((current) => current.map((request) => request._id === data.request._id ? data.request : request));
+      setDecisionNotes("");
+      setSuccessMessage(`${data.request.requestNumber} was ${decision === "approve" ? "approved" : "rejected"}.`);
+    } catch (decisionError) {
+      setActionError(decisionError instanceof Error ? decisionError.message : "Unable to update inventory request");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleFulfillment() {
+    if (!selectedRequest) {
+      return;
+    }
+
+    const lines = Object.entries(fulfillmentQuantities)
+      .filter(([, quantity]) => quantity.trim() !== "")
+      .map(([lineId, quantity]) => ({ lineId, quantity: Number(quantity) }));
+
+    if (lines.length === 0 || lines.some((line) => !Number.isFinite(line.quantity) || line.quantity <= 0)) {
+      setActionError("Enter a fulfillment quantity greater than 0 for at least one approved line.");
+      return;
+    }
+
+    setActionError(null);
+    setSuccessMessage(null);
+    setIsSubmitting(true);
+
+    try {
+      const data = await fulfillAdminInventoryRequest(selectedRequest._id, lines);
+      setRequests((current) => current.map((request) => request._id === data.request._id ? data.request : request));
+      setSuccessMessage(`${data.request.requestNumber} fulfillment was recorded.`);
+    } catch (fulfillmentError) {
+      setActionError(fulfillmentError instanceof Error ? fulfillmentError.message : "Unable to record fulfillment");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="page-stack">
+      <div className="resource-toolbar">
+        <div>
+          <p className="eyebrow">Admin Replenishment</p>
+          <h2>Inventory requests</h2>
+        </div>
+      </div>
+      {isLoading ? <LoadingState title="Loading inventory requests" message="Fetching requests for review..." /> : null}
+      {error ? <ErrorState title="Inventory requests unavailable" message={error} /> : null}
+      {successMessage ? <SuccessState title="Request updated" message={successMessage} /> : null}
+      {!isLoading && !error ? (
+        <div className="request-review-layout">
+          <section className="table-panel" aria-label="Inventory request list">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Request</th>
+                  <th scope="col">Store</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Submitted</th>
+                  <th scope="col">Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {requests.map((request) => (
+                  <tr key={request._id}>
+                    <td><strong>{request.requestNumber}</strong><span>{request.lines.length} item{request.lines.length === 1 ? "" : "s"}</span></td>
+                    <td>{request.store?.name ?? "Store unavailable"}</td>
+                    <td><StatusPill>{formatTitle(request.status)}</StatusPill></td>
+                    <td>{formatOptionalDate(request.submittedAt ?? request.createdAt)}</td>
+                    <td><button type="button" className="secondary-button" onClick={() => { setSelectedRequestId(request._id); setActionError(null); setSuccessMessage(null); }}>Review</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {requests.length === 0 ? <p className="table-empty-message">No inventory requests have been submitted.</p> : null}
+          </section>
+          {selectedRequest ? (
+            <section className="related-panel request-review-panel" aria-label="Selected inventory request">
+              <div className="resource-toolbar">
+                <div>
+                  <p className="eyebrow">Request review</p>
+                  <h3>{selectedRequest.requestNumber}</h3>
+                </div>
+                <StatusPill>{formatTitle(selectedRequest.status)}</StatusPill>
+              </div>
+              <div className="detail-panel">
+                <div><span>Store</span><strong>{selectedRequest.store?.name ?? "Unavailable"}</strong></div>
+                <div><span>Requested by</span><strong>{selectedRequest.requestedBy?.displayName ?? selectedRequest.requestedBy?.employeeCode ?? "Unavailable"}</strong></div>
+                <div><span>Station</span><strong>{selectedRequest.station?.name ?? "Not specified"}</strong></div>
+                <div><span>Submitted</span><strong>{formatOptionalDate(selectedRequest.submittedAt ?? selectedRequest.createdAt)}</strong></div>
+              </div>
+              {selectedRequest.notes ? <p className="form-hint">Notes: {selectedRequest.notes}</p> : null}
+              <div className="related-list">
+                {selectedRequest.lines.map((line) => (
+                  <article className="related-row" key={line._id}>
+                    <div>
+                      <strong>{line.item?.name ?? "Item unavailable"}</strong>
+                      <span>{line.item?.sku ?? "No SKU"} · {line.item?.baseUnit ?? "units"}</span>
+                    </div>
+                    <div>
+                      <span>Requested {line.requestedQuantity}</span>
+                      <span>Approved {line.approvedQuantity ?? 0} · Fulfilled {line.fulfilledQuantity}</span>
+                      <span>Available stock {line.availableQuantity ?? "Unavailable"}</span>
+                      <StatusPill>{formatTitle(line.status)}</StatusPill>
+                    </div>
+                    {(selectedRequest.status === "approved" || selectedRequest.status === "partially_fulfilled") && (line.status === "approved" || line.status === "partially_fulfilled") ? (
+                      <label className="form-field fulfillment-field">
+                        <span>Fulfill now</span>
+                        <input
+                          type="number"
+                          min="0.000001"
+                          max={Math.max(0, (line.approvedQuantity ?? 0) - line.fulfilledQuantity)}
+                          step="0.000001"
+                          value={fulfillmentQuantities[line._id] ?? ""}
+                          onChange={(event) => setFulfillmentQuantities((current) => ({ ...current, [line._id]: event.target.value }))}
+                          placeholder="0"
+                        />
+                      </label>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+              {selectedRequest.status === "submitted" ? (
+                <>
+                  <label className="form-field">
+                    <span>Decision notes</span>
+                    <textarea value={decisionNotes} maxLength={1000} onChange={(event) => setDecisionNotes(event.target.value)} placeholder="Optional approval or rejection notes" />
+                  </label>
+                  {actionError ? <ErrorState title="Decision failed" message={actionError} /> : null}
+                  <div className="form-actions">
+                    <button type="button" className="secondary-button" disabled={isSubmitting} onClick={() => void handleDecision("reject")}>Reject Request</button>
+                    <button type="button" disabled={isSubmitting} onClick={() => void handleDecision("approve")}>{isSubmitting ? "Saving..." : "Approve Request"}</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {selectedRequest.status === "approved" || selectedRequest.status === "partially_fulfilled" ? (
+                    <>
+                      {actionError ? <ErrorState title="Fulfillment failed" message={actionError} /> : null}
+                      <div className="form-actions">
+                        <button type="button" disabled={isSubmitting} onClick={() => void handleFulfillment()}>{isSubmitting ? "Saving..." : "Record Fulfillment"}</button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="form-hint">This request has been resolved. Fulfillment is unavailable for its current status.</p>
+                  )}
+                </>
+              )}
+            </section>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function ProtectedResourcePage({ route, user }: { route: AppRoute; user: SessionUser }) {
@@ -141,6 +649,63 @@ function ProtectedResourcePage({ route, user }: { route: AppRoute; user: Session
   );
 }
 
+function StoreManagerWorkspacePage({ user, onNavigate }: { user: SessionUser; onNavigate: (path: string) => void }) {
+  const [summary, setSummary] = useState<StoreSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user.storeId) {
+      setError("Your Store Manager account is not assigned to a store.");
+      setIsLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadSummary() {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const data = await getStoreSummary(user.storeId!);
+        if (isMounted) {
+          setSummary(data);
+        }
+      } catch (loadError) {
+        if (isMounted) {
+          setError(loadError instanceof Error ? loadError.message : "Unable to load your store workspace");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadSummary();
+    return () => {
+      isMounted = false;
+    };
+  }, [user.storeId]);
+
+  return (
+    <div className="page-stack">
+      {isLoading ? <LoadingState title="Loading Store Manager workspace" message="Checking your assigned store and daily operations..." /> : null}
+      {error ? <ErrorState title="Store workspace unavailable" message={error} /> : null}
+      {summary ? <StoreSummaryPanel summary={summary} /> : null}
+      <section className="related-panel" aria-label="Store Manager actions">
+        <h3>Daily operations</h3>
+        <p className="form-hint">Use the assigned-store tools below to request replenishment and review your store team.</p>
+        <div className="form-actions">
+          <button type="button" onClick={() => onNavigate("/store-manager/inventory-requests")}>Inventory Requests</button>
+          <button type="button" className="secondary-button" onClick={() => onNavigate("/store-manager/employees")}>Employees</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function StoreManagementPage({ pathname, onNavigate }: { pathname: string; onNavigate: (path: string) => void }) {
   const normalizedPath = pathname.replace(/\/$/, "") || "/stores";
   const isCreatePath = normalizedPath === "/stores/new";
@@ -210,6 +775,1011 @@ function StationManagementPage({ pathname, onNavigate }: { pathname: string; onN
   }
 
   return <StationListPage onNavigate={onNavigate} />;
+}
+
+type InventoryFormValues = {
+  name: string;
+  sku: string;
+  category: string;
+  baseUnit: (typeof inventoryUnitOptions)[number]["value"] | "";
+  status: (typeof inventoryItemStatusOptions)[number]["value"];
+  purchaseUnit: (typeof inventoryUnitOptions)[number]["value"] | "";
+  purchasePrice: string;
+  storeId: string;
+  initialStockQuantity: string;
+  packagingLevels: InventoryPackagingLevelForm[];
+};
+
+type InventoryPackagingLevelForm = {
+  parentUnit: string;
+  childUnit: string;
+  quantity: string;
+};
+
+type InventoryStockFormValues = {
+  quantityOnHand: string;
+  reorderPoint: string;
+  parLevel: string;
+  status: (typeof inventoryStockStatusOptions)[number]["value"];
+};
+
+const emptyInventoryForm: InventoryFormValues = {
+  name: "",
+  sku: "",
+  category: "",
+  baseUnit: "",
+  status: "active",
+  purchaseUnit: "",
+  purchasePrice: "",
+  storeId: "",
+  initialStockQuantity: "",
+  packagingLevels: [],
+};
+
+function InventoryManagementPage({ pathname, onNavigate }: { pathname: string; onNavigate: (path: string) => void }) {
+  const normalizedPath = pathname.replace(/\/$/, "") || "/inventory";
+  const isCreatePath = normalizedPath === "/inventory/new";
+  const editMatch = normalizedPath.match(/^\/inventory\/([^/]+)\/edit$/);
+  const detailMatch = normalizedPath.match(/^\/inventory\/([^/]+)$/);
+
+  if (isCreatePath) {
+    return <InventoryCreatePage onNavigate={onNavigate} />;
+  }
+
+  if (editMatch?.[1]) {
+    return <InventoryEditPage inventoryItemId={editMatch[1]} onNavigate={onNavigate} />;
+  }
+
+  if (detailMatch?.[1]) {
+    return <InventoryDetailPage inventoryItemId={detailMatch[1]} onNavigate={onNavigate} />;
+  }
+
+  return <InventoryListPage onNavigate={onNavigate} />;
+}
+
+function InventoryListPage({ onNavigate }: { onNavigate: (path: string) => void }) {
+  const [items, setItems] = useState<AdminInventoryItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadInventory() {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const data = await getAdminInventory();
+
+        if (isMounted) {
+          setItems(data.inventory);
+        }
+      } catch (loadError) {
+        if (isMounted) {
+          setError(loadError instanceof Error ? loadError.message : "Unable to load inventory");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadInventory();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  return (
+    <div className="page-stack">
+      <div className="resource-toolbar">
+        <div>
+          <p className="eyebrow">Admin Inventory Management</p>
+          <h2>Inventory directory</h2>
+        </div>
+        <button type="button" onClick={() => onNavigate("/inventory/new")}>
+          Create Inventory Item
+        </button>
+      </div>
+      {isLoading ? <LoadingState title="Loading inventory" message="Fetching inventory items and store stock summaries..." /> : null}
+      {error ? <ErrorState title="Inventory unavailable" message={error} /> : null}
+      {!isLoading && !error && items.length === 0 ? (
+        <EmptyState title="No inventory items found" message="Inventory items created in the next task will appear here." />
+      ) : null}
+      {!isLoading && !error && items.length > 0 ? <InventoryTable items={items} onNavigate={onNavigate} /> : null}
+    </div>
+  );
+}
+
+function InventoryTable({ items, onNavigate }: { items: AdminInventoryItem[]; onNavigate: (path: string) => void }) {
+  return (
+    <section className="table-panel" aria-label="Inventory items">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th scope="col">Inventory Item</th>
+            <th scope="col">Category</th>
+            <th scope="col">Store</th>
+            <th scope="col">Stock Quantity</th>
+            <th scope="col">Purchase Price</th>
+            <th scope="col">Smallest-Unit Cost</th>
+            <th scope="col">Status</th>
+            <th scope="col">Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={item._id}>
+              <td>
+                <strong>{item.name}</strong>
+                <span>{item.sku}</span>
+              </td>
+              <td>{item.category}</td>
+              <td>{formatInventoryStores(item)}</td>
+              <td>{formatInventoryQuantity(item)}</td>
+              <td>{formatInventoryCurrency(item.purchasePriceCents)}</td>
+              <td>{formatInventoryUnitCost(item.smallestUnitCostCents)}</td>
+              <td><StatusBadge value={item.status} /></td>
+              <td>
+                <a
+                  href={`/inventory/${item._id}`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onNavigate(`/inventory/${item._id}`);
+                  }}
+                >
+                  View details
+                </a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function InventoryCreatePage({ onNavigate }: { onNavigate: (path: string) => void }) {
+  return <InventoryFormScreen mode="create" onNavigate={onNavigate} />;
+}
+
+function InventoryEditPage({
+  inventoryItemId,
+  onNavigate,
+}: {
+  inventoryItemId: string;
+  onNavigate: (path: string) => void;
+}) {
+  const [item, setItem] = useState<AdminInventoryItem | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadItem() {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const data = await getAdminInventoryItem(inventoryItemId);
+
+        if (isMounted) {
+          setItem(data.inventoryItem);
+        }
+      } catch (loadError) {
+        if (isMounted) {
+          setError(loadError instanceof Error ? loadError.message : "Unable to load inventory item");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadItem();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [inventoryItemId]);
+
+  return (
+    <div className="page-stack">
+      {isLoading ? <LoadingState title="Loading inventory item" message="Preparing this item for editing..." /> : null}
+      {error ? <ErrorState title="Inventory item unavailable" message={error} /> : null}
+      {!isLoading && !error && item ? (
+        <InventoryFormScreen mode="edit" item={item} onNavigate={onNavigate} />
+      ) : null}
+    </div>
+  );
+}
+
+function InventoryFormScreen({
+  item,
+  mode,
+  onNavigate,
+}: {
+  item?: AdminInventoryItem;
+  mode: "create" | "edit";
+  onNavigate: (path: string) => void;
+}) {
+  const [form, setForm] = useState<InventoryFormValues>(() => inventoryToForm(item));
+  const [stores, setStores] = useState<AdminStore[]>([]);
+  const [storesError, setStoresError] = useState<string | null>(null);
+  const [isLoadingStores, setIsLoadingStores] = useState(true);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadStores() {
+      setIsLoadingStores(true);
+      setStoresError(null);
+
+      try {
+        const data = await getAdminStores();
+
+        if (isMounted) {
+          setStores(data.stores);
+        }
+      } catch (loadError) {
+        if (isMounted) {
+          setStoresError(loadError instanceof Error ? loadError.message : "Unable to load stores");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingStores(false);
+        }
+      }
+    }
+
+    void loadStores();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  function updateField(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: value }));
+    setActionMessage(null);
+    setSubmitError(null);
+    setFieldErrors((current) => {
+      if (!current[name]) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
+  }
+
+  function updatePackagingLevel(index: number, field: keyof InventoryPackagingLevelForm, value: string) {
+    setForm((current) => ({
+      ...current,
+      packagingLevels: current.packagingLevels.map((level, levelIndex) =>
+        levelIndex === index ? { ...level, [field]: value } : level,
+      ),
+    }));
+    setActionMessage(null);
+    setSubmitError(null);
+    setFieldErrors((current) => {
+      if (!current.packagingLevels) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next.packagingLevels;
+      return next;
+    });
+  }
+
+  function addPackagingLevel() {
+    setForm((current) => ({
+      ...current,
+      packagingLevels: [...current.packagingLevels, { parentUnit: "", childUnit: "", quantity: "" }],
+    }));
+  }
+
+  function removePackagingLevel(index: number) {
+    setForm((current) => ({
+      ...current,
+      packagingLevels: current.packagingLevels.filter((_level, levelIndex) => levelIndex !== index),
+    }));
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setActionMessage(null);
+    setSubmitError(null);
+
+    const errors = validateInventoryForm(form);
+    setFieldErrors(errors);
+
+    if (Object.keys(errors).length > 0) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const packagingLevels: AdminInventoryPackagingLevel[] = form.packagingLevels.map((level) => ({
+        parentUnit: level.parentUnit.trim().toLowerCase(),
+        childUnit: level.childUnit.trim().toLowerCase(),
+        quantity: Number(level.quantity),
+      }));
+
+      if (mode === "edit" && item) {
+        const data = await updateAdminInventoryItem(item._id, {
+          name: form.name.trim(),
+          sku: form.sku.trim().toUpperCase(),
+          category: form.category.trim(),
+          purchaseUnit: form.purchaseUnit as UpdateAdminInventoryItemInput["purchaseUnit"],
+          baseUnit: form.baseUnit as UpdateAdminInventoryItemInput["baseUnit"],
+          packagingLevels,
+          purchasePriceCents: Math.round(Number(form.purchasePrice) * 100),
+          status: form.status as UpdateAdminInventoryItemInput["status"],
+        });
+        sessionStorage.setItem(inventoryPackagingUpdatedMessageKey, `${data.inventoryItem.name} and its source cost were updated successfully.`);
+        onNavigate(`/inventory/${data.inventoryItem._id}`);
+      } else {
+        const data = await createAdminInventoryItem({
+          name: form.name.trim(),
+          sku: form.sku.trim().toUpperCase(),
+          category: form.category.trim(),
+          purchaseUnit: form.purchaseUnit as CreateAdminInventoryItemInput["purchaseUnit"],
+          baseUnit: form.baseUnit as CreateAdminInventoryItemInput["baseUnit"],
+          packagingLevels,
+          purchasePriceCents: Math.round(Number(form.purchasePrice) * 100),
+          storeId: form.storeId,
+          initialStockQuantity: Number(form.initialStockQuantity),
+          status: form.status,
+        });
+
+        sessionStorage.setItem(inventoryCreatedMessageKey, `${data.inventoryItem.name} was created successfully.`);
+        onNavigate(`/inventory/${data.inventoryItem._id}`);
+      }
+    } catch (createError) {
+      setSubmitError(createError instanceof Error ? createError.message : mode === "create" ? "Unable to create inventory item" : "Unable to update packaging");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="page-stack">
+      <div className="resource-toolbar">
+        <div>
+          <p className="eyebrow">Admin Inventory Management</p>
+          <h2>{mode === "create" ? "Create inventory item" : `Edit ${item?.name ?? "inventory item"}`}</h2>
+        </div>
+        <button type="button" className="secondary-button" onClick={() => onNavigate("/inventory")}>
+          Back to Inventory
+        </button>
+      </div>
+      {isLoadingStores ? <LoadingState title="Loading stores" message="Preparing store associations for this item..." /> : null}
+      {storesError ? <ErrorState title="Stores unavailable" message={storesError} /> : null}
+      {submitError ? <ErrorState title="Inventory creation failed" message={submitError} /> : null}
+      {actionMessage ? (
+        <section className="state-panel" role="status">
+          <div>
+            <h2>Changes not saved</h2>
+            <p>{actionMessage}</p>
+          </div>
+        </section>
+      ) : null}
+      {!isLoadingStores && !storesError ? <form className="store-form" onSubmit={handleSubmit} noValidate>
+        <InventoryFormSections
+          form={form}
+          item={item}
+          stores={stores}
+          fieldErrors={fieldErrors}
+          onChange={updateField}
+          onPackagingLevelChange={updatePackagingLevel}
+          onAddPackagingLevel={addPackagingLevel}
+          onRemovePackagingLevel={removePackagingLevel}
+        />
+        <div className="form-actions">
+          <button type="button" className="secondary-button" onClick={() => onNavigate("/inventory")}>
+            Cancel
+          </button>
+          <button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? mode === "create" ? "Creating..." : "Saving..." : mode === "create" ? "Create Inventory Item" : "Save Packaging"}
+          </button>
+        </div>
+      </form> : null}
+    </div>
+  );
+}
+
+function InventoryFormSections({
+  form,
+  item,
+  stores,
+  fieldErrors,
+  onChange,
+  onPackagingLevelChange,
+  onAddPackagingLevel,
+  onRemovePackagingLevel,
+}: {
+  form: InventoryFormValues;
+  item?: AdminInventoryItem;
+  stores: AdminStore[];
+  fieldErrors: Record<string, string>;
+  onChange: (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+  onPackagingLevelChange: (index: number, field: keyof InventoryPackagingLevelForm, value: string) => void;
+  onAddPackagingLevel: () => void;
+  onRemovePackagingLevel: (index: number) => void;
+}) {
+  const associatedStore = item?.stores[0]?.store;
+
+  return (
+    <>
+      <section aria-label="Inventory item details">
+        <h3>Item details</h3>
+        <div className="form-grid">
+          <Field label="Inventory Name" required error={fieldErrors.name}>
+            <input name="name" value={form.name} onChange={onChange} required />
+          </Field>
+          <Field label="SKU" required error={fieldErrors.sku}>
+            <input name="sku" value={form.sku} onChange={onChange} required />
+          </Field>
+          <Field label="Category" required error={fieldErrors.category}>
+            <input name="category" value={form.category} onChange={onChange} required />
+          </Field>
+          <Field label="Smallest Usable Unit" required error={fieldErrors.baseUnit}>
+            <select name="baseUnit" value={form.baseUnit} onChange={onChange} required>
+              <option value="">Select a unit</option>
+              {inventoryUnitOptions.map((unit) => <option key={unit.value} value={unit.value}>{unit.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Item Status" required>
+            <select name="status" value={form.status} onChange={onChange} required>
+              {inventoryItemStatusOptions.map((status) => (
+                <option key={status.value} value={status.value}>{status.label}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      </section>
+      <section aria-label="Inventory purchasing information">
+        <h3>Purchasing</h3>
+        <div className="form-grid">
+          <Field label="Purchase Unit" required error={fieldErrors.purchaseUnit}>
+            <select name="purchaseUnit" value={form.purchaseUnit} onChange={onChange} required>
+              <option value="">Select a unit</option>
+              {inventoryUnitOptions.map((unit) => <option key={unit.value} value={unit.value}>{unit.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Purchase Price" required error={fieldErrors.purchasePrice}>
+            <input name="purchasePrice" type="number" min="0" step="0.01" value={form.purchasePrice} onChange={onChange} placeholder="0.00" required />
+          </Field>
+        </div>
+        <p className="form-hint">Enter the purchase price in dollars. It remains separate from the calculated smallest-unit cost.</p>
+      </section>
+      <section aria-label="Inventory packaging information">
+        <h3>Packaging</h3>
+        <p className="form-hint">Define each conversion from a larger package to the unit it contains. For example, case → box → each.</p>
+        {form.packagingLevels.map((level, index) => (
+          <div className="form-grid packaging-level-row" key={index}>
+            <Field label={`Parent unit ${index + 1}`} required>
+              <input
+                value={level.parentUnit}
+                onChange={(event) => onPackagingLevelChange(index, "parentUnit", event.target.value)}
+                placeholder="case"
+                required
+              />
+            </Field>
+            <Field label="Contains unit" required>
+              <input
+                value={level.childUnit}
+                onChange={(event) => onPackagingLevelChange(index, "childUnit", event.target.value)}
+                placeholder="box or each"
+                required
+              />
+            </Field>
+            <Field label="Quantity contained" required>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={level.quantity}
+                onChange={(event) => onPackagingLevelChange(index, "quantity", event.target.value)}
+                placeholder="1"
+                required
+              />
+            </Field>
+            <button type="button" className="secondary-button" onClick={() => onRemovePackagingLevel(index)}>
+              Remove level
+            </button>
+          </div>
+        ))}
+        <button type="button" className="secondary-button" onClick={onAddPackagingLevel}>
+          Add packaging level
+        </button>
+        {fieldErrors.packagingLevels ? <p className="form-hint" role="alert">{fieldErrors.packagingLevels}</p> : null}
+      </section>
+      <section aria-label="Inventory store stock information">
+        <h3>Store stock</h3>
+        <div className="form-grid">
+          <Field label="Associated Store" required error={fieldErrors.storeId}>
+            <select name="storeId" value={form.storeId} onChange={onChange} required>
+              <option value="">Select a store</option>
+              {stores.map((store) => (
+                <option key={store._id} value={store._id}>{store.name} ({store.storeNumber})</option>
+              ))}
+              {form.storeId && associatedStore && !stores.some((store) => store._id === form.storeId) ? (
+                <option value={form.storeId}>{associatedStore.name} ({associatedStore.storeNumber})</option>
+              ) : null}
+            </select>
+          </Field>
+          <Field label="Initial Stock Quantity" required error={fieldErrors.initialStockQuantity}>
+            <input name="initialStockQuantity" type="number" min="0" step="0.000001" value={form.initialStockQuantity} onChange={onChange} placeholder="0" required />
+          </Field>
+        </div>
+        <p className="form-hint">The initial quantity is saved against the selected store. Stock operations remain part of later inventory tasks.</p>
+      </section>
+      {Object.keys(fieldErrors).length > 0 ? <p className="form-hint" role="alert">Please correct the highlighted inventory fields before submitting.</p> : null}
+    </>
+  );
+}
+
+function InventoryDetailPage({
+  inventoryItemId,
+  onNavigate,
+}: {
+  inventoryItemId: string;
+  onNavigate: (path: string) => void;
+}) {
+  const [item, setItem] = useState<AdminInventoryItem | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const createdMessage = sessionStorage.getItem(inventoryCreatedMessageKey);
+    const updatedMessage = sessionStorage.getItem(inventoryPackagingUpdatedMessageKey);
+    const storedMessage = createdMessage ?? updatedMessage;
+
+    if (storedMessage) {
+      setSuccessMessage(storedMessage);
+      sessionStorage.removeItem(createdMessage ? inventoryCreatedMessageKey : inventoryPackagingUpdatedMessageKey);
+    }
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadItem() {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const data = await getAdminInventoryItem(inventoryItemId);
+
+        if (isMounted) {
+          setItem(data.inventoryItem);
+        }
+      } catch (loadError) {
+        if (isMounted) {
+          setError(loadError instanceof Error ? loadError.message : "Unable to load inventory item details");
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+
+    void loadItem();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [inventoryItemId]);
+
+  return (
+    <div className="page-stack">
+      <div className="resource-toolbar">
+        <div>
+          <p className="eyebrow">Inventory Item Details</p>
+          <h2>{item?.name ?? "Inventory item"}</h2>
+        </div>
+        <div className="toolbar-actions">
+          <button type="button" className="secondary-button" onClick={() => onNavigate("/inventory")}>
+            Back to Inventory
+          </button>
+          <button type="button" onClick={() => onNavigate(`/inventory/${inventoryItemId}/edit`)}>
+            Edit Item
+          </button>
+        </div>
+      </div>
+      {successMessage ? (
+        <SuccessState
+          message={successMessage}
+          title={successMessage.includes("packaging was updated") ? "Packaging updated" : successMessage.includes("stock was updated") ? "Stock updated" : "Inventory item created"}
+        />
+      ) : null}
+      {isLoading ? <LoadingState title="Loading inventory item" message="Fetching this item from the API..." /> : null}
+      {error ? <ErrorState title="Inventory item unavailable" message={error} /> : null}
+      {!isLoading && !error && item ? (
+        <InventoryDetailPanel
+          item={item}
+          onStockUpdated={(updatedItem) => {
+            setItem(updatedItem);
+            setSuccessMessage(`${updatedItem.name} stock was updated successfully.`);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function InventoryDetailPanel({
+  item,
+  onStockUpdated,
+}: {
+  item: AdminInventoryItem;
+  onStockUpdated: (item: AdminInventoryItem) => void;
+}) {
+  const details = [
+    ["Inventory Name", item.name],
+    ["SKU", item.sku],
+    ["Category", item.category],
+    ["Purchase Unit", formatInventoryUnit(item.purchaseUnit)],
+    ["Smallest Usable Unit", item.baseUnit],
+    ["Status", formatInventoryStatus(item.status)],
+    ["Created", formatOptionalDate(item.createdAt)],
+    ["Updated", formatOptionalDate(item.updatedAt)],
+  ] as const;
+
+  return (
+    <div className="store-detail-stack">
+      <section className="detail-panel" aria-label={`${item.name} item details`}>
+        {details.map(([label, value]) => (
+          <div key={label}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+          </div>
+        ))}
+      </section>
+      <section className="related-panel" aria-label="Purchasing and cost">
+        <h3>Purchasing and cost</h3>
+        <div className="detail-panel">
+          <div><span>Purchase Price</span><strong>{formatInventoryCurrency(item.purchasePriceCents)}</strong></div>
+          <div><span>Smallest-Unit Cost</span><strong>{formatInventoryUnitCost(item.smallestUnitCostCents)}</strong></div>
+        </div>
+        <p>Calculated from the purchase price and total packaging conversion to one smallest usable unit.</p>
+      </section>
+      <section className="related-panel" aria-label="Packaging">
+        <h3>Packaging</h3>
+        {item.packagingLevels && item.packagingLevels.length > 0 ? (
+          <div className="related-list">
+            {item.packagingLevels.map((level) => (
+              <article className="related-row" key={`${level.parentUnit}-${level.childUnit}`}>
+                <div>
+                  <strong>{formatInventoryUnit(level.parentUnit)} → {formatInventoryUnit(level.childUnit)}</strong>
+                  <span>One {formatInventoryUnit(level.parentUnit)} contains:</span>
+                </div>
+                <strong>{level.quantity} {formatInventoryUnit(level.childUnit)}</strong>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p>No packaging structure is configured yet.</p>
+        )}
+      </section>
+      <section className="related-panel" aria-label="Store stock">
+        <h3>Store stock</h3>
+        {item.stores.length > 0 ? (
+          <div className="related-list">
+            {item.stores.map((stock) => (
+              <InventoryStockEditor
+                key={stock._id}
+                inventoryItemId={item._id}
+                stock={stock}
+                onUpdated={onStockUpdated}
+              />
+            ))}
+          </div>
+        ) : (
+          <p>No store stock is configured for this inventory item.</p>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function InventoryStockEditor({
+  inventoryItemId,
+  stock,
+  onUpdated,
+}: {
+  inventoryItemId: string;
+  stock: AdminInventoryStoreStock;
+  onUpdated: (item: AdminInventoryItem) => void;
+}) {
+  const [form, setForm] = useState<InventoryStockFormValues>({
+    quantityOnHand: String(stock.quantityOnHand),
+    reorderPoint: String(stock.reorderPoint),
+    parLevel: String(stock.parLevel),
+    status: stock.status as InventoryStockFormValues["status"],
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  function updateField(event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+    const { name, value } = event.target;
+    setForm((current) => ({ ...current, [name]: value }));
+    setError(null);
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!stock.store) {
+      setError("This stock record has no associated store.");
+      return;
+    }
+
+    const quantityOnHand = Number(form.quantityOnHand);
+    const reorderPoint = Number(form.reorderPoint);
+    const parLevel = Number(form.parLevel);
+
+    if (
+      form.quantityOnHand.trim() === "" ||
+      form.reorderPoint.trim() === "" ||
+      form.parLevel.trim() === "" ||
+      !Number.isFinite(quantityOnHand) ||
+      !Number.isFinite(reorderPoint) ||
+      !Number.isFinite(parLevel) ||
+      quantityOnHand < 0 ||
+      reorderPoint < 0 ||
+      parLevel < 0
+    ) {
+      setError("Stock quantities must be numbers greater than or equal to 0.");
+      return;
+    }
+
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const data = await updateAdminInventoryStock(inventoryItemId, stock.store._id, {
+        quantityOnHand,
+        reorderPoint,
+        parLevel,
+        status: form.status,
+      });
+      onUpdated(data.inventoryItem);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to update store stock");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <article className="related-row">
+      <div>
+        <strong>{stock.store?.name ?? "Store unavailable"}</strong>
+        <span>{stock.store?.storeNumber ?? "No store association"}</span>
+        <span>Current status: {formatInventoryStockStatus(stock.status)}</span>
+      </div>
+      {stock.store ? (
+        <form className="inventory-stock-editor" onSubmit={handleSubmit}>
+          <label>
+            <span>On hand</span>
+            <input name="quantityOnHand" type="number" min="0" step="0.000001" value={form.quantityOnHand} onChange={updateField} />
+          </label>
+          <label>
+            <span>Reorder point</span>
+            <input name="reorderPoint" type="number" min="0" step="0.000001" value={form.reorderPoint} onChange={updateField} />
+          </label>
+          <label>
+            <span>Par level</span>
+            <input name="parLevel" type="number" min="0" step="0.000001" value={form.parLevel} onChange={updateField} />
+          </label>
+          <label>
+            <span>Status</span>
+            <select name="status" value={form.status} onChange={updateField}>
+              {inventoryStockStatusOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" disabled={isSaving}>{isSaving ? "Saving..." : "Save Stock"}</button>
+          {error ? <span className="form-hint" role="alert">{error}</span> : null}
+        </form>
+      ) : null}
+    </article>
+  );
+}
+
+function inventoryToForm(item?: AdminInventoryItem): InventoryFormValues {
+  if (!item) {
+    return { ...emptyInventoryForm };
+  }
+
+  return {
+    ...emptyInventoryForm,
+    name: item.name,
+    sku: item.sku,
+    category: item.category,
+    baseUnit: item.baseUnit as InventoryFormValues["baseUnit"],
+    status: item.status as InventoryFormValues["status"],
+    purchaseUnit: item.purchaseUnit ?? "",
+    purchasePrice: item.purchasePriceCents === null || item.purchasePriceCents === undefined
+      ? ""
+      : (item.purchasePriceCents / 100).toFixed(2),
+    storeId: item.stores[0]?.store?._id ?? "",
+    initialStockQuantity: item.stores[0] ? String(item.stores[0].quantityOnHand) : "",
+    packagingLevels: (item.packagingLevels ?? []).map((level) => ({
+      parentUnit: level.parentUnit,
+      childUnit: level.childUnit,
+      quantity: String(level.quantity),
+    })),
+  };
+}
+
+function validateInventoryForm(form: InventoryFormValues) {
+  const errors: Record<string, string> = {};
+  const name = form.name.trim();
+  const sku = form.sku.trim().toUpperCase();
+  const category = form.category.trim();
+  const purchasePrice = Number(form.purchasePrice);
+  const initialStockQuantity = Number(form.initialStockQuantity);
+
+  if (name.length < 2 || name.length > 160) {
+    errors.name = "Inventory name must be between 2 and 160 characters.";
+  }
+
+  if (!/^[A-Z0-9_.-]+$/.test(sku) || sku.length < 2 || sku.length > 64) {
+    errors.sku = "SKU must be 2–64 characters using letters, numbers, underscores, periods, or hyphens.";
+  }
+
+  if (!category) {
+    errors.category = "Category is required.";
+  }
+
+  if (!form.purchaseUnit) {
+    errors.purchaseUnit = "Purchase unit is required.";
+  }
+
+  if (!form.baseUnit) {
+    errors.baseUnit = "Smallest usable unit is required.";
+  }
+
+  if (!Number.isFinite(purchasePrice) || purchasePrice < 0) {
+    errors.purchasePrice = "Purchase price must be zero or greater.";
+  }
+
+  if (!form.storeId) {
+    errors.storeId = "An associated store is required.";
+  }
+
+  if (!Number.isFinite(initialStockQuantity) || initialStockQuantity < 0) {
+    errors.initialStockQuantity = "Initial stock quantity must be zero or greater.";
+  }
+
+  const packagingError = validatePackagingLevels(form.packagingLevels, form.purchaseUnit, form.baseUnit);
+
+  if (packagingError) {
+    errors.packagingLevels = packagingError;
+  }
+
+  return errors;
+}
+
+function validatePackagingLevels(
+  levels: InventoryPackagingLevelForm[],
+  purchaseUnit: InventoryFormValues["purchaseUnit"],
+  baseUnit: InventoryFormValues["baseUnit"],
+) {
+  if (levels.length === 0) {
+    return purchaseUnit && baseUnit && purchaseUnit !== baseUnit
+      ? "Add packaging levels to connect the purchase unit to the smallest usable unit."
+      : null;
+  }
+
+  const byParent = new Map<string, InventoryPackagingLevelForm>();
+
+  for (const level of levels) {
+    const parentUnit = level.parentUnit.trim().toLowerCase();
+    const childUnit = level.childUnit.trim().toLowerCase();
+    const quantity = Number(level.quantity);
+
+    if (!/^[a-z][a-z0-9_-]{1,31}$/.test(parentUnit) || !/^[a-z][a-z0-9_-]{1,31}$/.test(childUnit)) {
+      return "Packaging units must use 2–32 lowercase letters, numbers, hyphens, or underscores.";
+    }
+
+    if (parentUnit === childUnit) {
+      return "Each packaging level must convert between different units.";
+    }
+
+    if (!Number.isInteger(quantity) || quantity < 1) {
+      return "Packaging quantities must be positive whole numbers.";
+    }
+
+    if (byParent.has(parentUnit)) {
+      return `Packaging unit ${parentUnit} may only have one child conversion.`;
+    }
+
+    byParent.set(parentUnit, level);
+  }
+
+  const visited = new Set<string>();
+  let currentUnit: string = purchaseUnit;
+
+  while (currentUnit && baseUnit && currentUnit !== baseUnit) {
+    if (visited.has(currentUnit)) {
+      return "Packaging levels may not contain a conversion cycle.";
+    }
+
+    visited.add(currentUnit);
+    const level = byParent.get(currentUnit);
+
+    if (!level) {
+      return "Packaging levels must form a continuous chain from the purchase unit to the smallest usable unit.";
+    }
+
+    currentUnit = level.childUnit.trim().toLowerCase();
+  }
+
+  return visited.size === levels.length
+    ? null
+    : "Packaging levels may not contain disconnected conversions.";
+}
+
+function formatInventoryStores(item: AdminInventoryItem) {
+  if (item.stores.length === 0) {
+    return "No store stock";
+  }
+
+  return item.stores.map((stock) => stock.store?.name ?? "Store unavailable").join(", ");
+}
+
+function formatInventoryQuantity(item: AdminInventoryItem) {
+  if (item.stores.length === 0) {
+    return "Not set";
+  }
+
+  return String(item.stores.reduce((total, stock) => total + stock.quantityOnHand, 0));
+}
+
+function formatInventoryCurrency(cents?: number | null) {
+  return cents === null || cents === undefined ? "Not set" : `$${(cents / 100).toFixed(2)}`;
+}
+
+function formatInventoryUnitCost(cents?: number | null) {
+  if (cents === null || cents === undefined) {
+    return "Not calculated";
+  }
+
+  const precision = cents > 0 && cents < 1 ? 4 : 2;
+  return `$${(cents / 100).toFixed(precision)}`;
+}
+
+function formatInventoryStatus(value: string) {
+  return inventoryItemStatusOptions.find((option) => option.value === value)?.label ?? formatTitle(value);
+}
+
+function formatInventoryStockStatus(value: string) {
+  return inventoryStockStatusOptions.find((option) => option.value === value)?.label ?? formatTitle(value);
+}
+
+function formatInventoryUnit(value?: string) {
+  return inventoryUnitOptions.find((option) => option.value === value)?.label ?? value ?? "Not set";
 }
 
 function StationListPage({ onNavigate }: { onNavigate: (path: string) => void }) {
@@ -477,18 +2047,25 @@ function StationCreatePage({ onNavigate }: { onNavigate: (path: string) => void 
 function validateStationForm(form: CreateAdminStationInput) {
   const errors: Record<string, string> = {};
 
-  if (!form.name.trim()) {
+  const name = form.name.trim();
+  const code = form.code.trim();
+
+  if (!name) {
     errors.name = "Station name is required.";
+  } else if (name.length < 2 || name.length > 120) {
+    errors.name = "Station name must be between 2 and 120 characters long.";
   }
 
   if (!form.storeId) {
     errors.storeId = "Store is required.";
   }
 
-  if (!form.code.trim()) {
+  if (!code) {
     errors.code = "Station code is required.";
-  } else if (!/^[A-Za-z0-9_-]+$/.test(form.code)) {
+  } else if (!/^[A-Za-z0-9_-]+$/.test(code)) {
     errors.code = "Use letters, numbers, underscores, or hyphens.";
+  } else if (code.length < 2 || code.length > 32) {
+    errors.code = "Station code must be between 2 and 32 characters long.";
   }
 
   if (!form.status) {

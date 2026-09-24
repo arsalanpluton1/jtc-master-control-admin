@@ -9,6 +9,7 @@ type LoginPageProps = {
 export function LoginPage({ error, isSubmitting, onLogin }: LoginPageProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -23,7 +24,7 @@ export function LoginPage({ error, isSubmitting, onLogin }: LoginPageProps) {
             JTC
           </span>
           <div>
-            <p>JTC</p>
+            {/* <p>JTC</p> */}
             <strong>Master Control</strong>
           </div>
         </div>
@@ -54,16 +55,37 @@ export function LoginPage({ error, isSubmitting, onLogin }: LoginPageProps) {
             />
           </label>
 
-          <label>
-            Password
-            <input
-              autoComplete="current-password"
-              name="password"
-              onChange={(event) => setPassword(event.target.value)}
-              required
-              type="password"
-              value={password}
-            />
+          <label className="password-field">
+            <span>Password</span>
+            <span className="password-input-wrapper">
+              <input
+                autoComplete="current-password"
+                name="password"
+                onChange={(event) => setPassword(event.target.value)}
+                required
+                type={showPassword ? "text" : "password"}
+                value={password}
+              />
+              <button
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+                className="password-toggle"
+                disabled={isSubmitting}
+                onClick={() => setShowPassword((visible) => !visible)}
+                type="button"
+              >
+                {showPassword ? (
+                  <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+                    <path d="M3 3l18 18M10.58 10.58a2 2 0 002.84 2.84M9.88 4.24A10.94 10.94 0 0112 4c5.23 0 9.27 3.64 10.5 8a11.8 11.8 0 01-4.04 5.63M6.23 6.23C4.6 7.4 3.33 9.14 1.5 12c1.23 4.36 5.27 8 10.5 8 1.45 0 2.8-.27 4.02-.75" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
+                  </svg>
+                ) : (
+                  <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
+                    <path d="M1.5 12S5.5 4 12 4s10.5 8 10.5 8-4 8-10.5 8S1.5 12 1.5 12z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.8" />
+                    <circle cx="12" cy="12" r="2.75" stroke="currentColor" strokeWidth="1.8" />
+                  </svg>
+                )}
+              </button>
+            </span>
           </label>
 
           <button disabled={isSubmitting} type="submit">

@@ -2,12 +2,22 @@ import { useEffect, useMemo, useState } from "react";
 import { getCurrentUser, login, logout, type SessionUser } from "./api/auth";
 import { getDashboardHealth, type DashboardStatus } from "./api/dashboard";
 import { ErrorState, LoadingState } from "./components/PageStates";
+import { ApiToastHost } from "./components/ApiToastHost";
 import { DashboardShell } from "./layout/DashboardShell";
 import { LoginPage } from "./pages/LoginPage";
 import { ResourcePage } from "./pages/ResourcePage";
 import { appRoutes, defaultRoute, findRoute } from "./routes";
 
 export function App() {
+  return (
+    <>
+      <ApiToastHost />
+      <AppContent />
+    </>
+  );
+}
+
+function AppContent() {
   const [pathname, setPathname] = useState(() => window.location.pathname);
   const [apiStatus, setApiStatus] = useState<DashboardStatus>({ status: "loading" });
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -131,11 +141,9 @@ export function App() {
     ) : null;
 
   if (authStatus === "checking") {
-    return (
-      <main className="boot-page">
-        <LoadingState title="Restoring session" message="Checking your dashboard access..." />
-      </main>
-    );
+    return <main className="boot-page">
+      <LoadingState title="Restoring session" message="Checking your dashboard access..." />
+    </main>;
   }
 
   if (!user) {

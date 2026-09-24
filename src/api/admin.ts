@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPut } from "./client";
+import { apiGet, apiPatch, apiPost, apiPut } from "./client";
 
 export const storeStatusOptions = [
   { value: "planning", label: "Planning" },
@@ -52,6 +52,63 @@ export const stationStatusOptions = [
 ] as const;
 export type StationStatusValue = (typeof stationStatusOptions)[number]["value"];
 
+export const inventoryItemStatusOptions = [
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+  { value: "discontinued", label: "Discontinued" },
+] as const;
+
+export type InventoryItemStatusValue = (typeof inventoryItemStatusOptions)[number]["value"];
+
+export const inventoryUnitOptions = [
+  { value: "each", label: "Each" },
+  { value: "gram", label: "Gram" },
+  { value: "kilogram", label: "Kilogram" },
+  { value: "milliliter", label: "Milliliter" },
+  { value: "liter", label: "Liter" },
+  { value: "ounce", label: "Ounce" },
+  { value: "pound", label: "Pound" },
+  { value: "case", label: "Case" },
+] as const;
+
+export type InventoryUnitValue = (typeof inventoryUnitOptions)[number]["value"];
+
+export const inventoryStockStatusOptions = [
+  { value: "in_stock", label: "In stock" },
+  { value: "low_stock", label: "Low stock" },
+  { value: "out_of_stock", label: "Out of stock" },
+  { value: "inactive", label: "Inactive" },
+] as const;
+
+export type InventoryStockStatusValue = (typeof inventoryStockStatusOptions)[number]["value"];
+
+export const productStatusOptions = [
+  { value: "draft", label: "Draft" },
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+  { value: "archived", label: "Archived" },
+] as const;
+
+export type ProductStatusValue = (typeof productStatusOptions)[number]["value"];
+
+export const productTypeOptions = [
+  { value: "prepared_item", label: "Prepared Item" },
+  { value: "retail_item", label: "Retail Item" },
+  { value: "modifier", label: "Modifier" },
+  { value: "bundle", label: "Bundle" },
+] as const;
+
+export type ProductTypeValue = (typeof productTypeOptions)[number]["value"];
+
+export const recipeStatusOptions = [
+  { value: "draft", label: "Draft" },
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+  { value: "archived", label: "Archived" },
+] as const;
+
+export type RecipeStatusValue = (typeof recipeStatusOptions)[number]["value"];
+
 export type AdminOverview = {
   counts: {
     stores: number;
@@ -65,6 +122,145 @@ export type AdminOverview = {
 
 export function getAdminOverview() {
   return apiGet<AdminOverview>("/admin/overview");
+}
+
+export type AdminProduct = {
+  _id: string;
+  name: string;
+  sku: string;
+  type: ProductTypeValue;
+  status: ProductStatusValue;
+  recipeId?: string | null;
+  recipe?: {
+    _id: string;
+    name: string;
+    code: string;
+    status: string;
+    costPerYieldCents: number | null;
+    costStatus: "calculated" | "incomplete";
+  } | null;
+  priceCents: number;
+  laborCostCents: number;
+  otherCostCents: number;
+  ingredientCostCents: number | null;
+  productCostCents: number | null;
+  costStatus: "calculated" | "incomplete" | "missing_recipe";
+  category: string;
+  description?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type CreateAdminProductInput = {
+  name: string;
+  sku: string;
+  type: ProductTypeValue;
+  status: ProductStatusValue;
+  priceCents: number;
+  laborCostCents: number;
+  otherCostCents: number;
+  category: string;
+  description?: string;
+  recipeId?: string;
+};
+
+export function getAdminProducts() {
+  return apiGet<{ products: AdminProduct[] }>("/admin/products");
+}
+
+export function getAdminProduct(productId: string) {
+  return apiGet<{ product: AdminProduct }>(`/admin/products/${productId}`);
+}
+
+export type AdminProductCost = {
+  productId: string;
+  name: string;
+  sku: string;
+  sellingPriceCents: number;
+  ingredientCostCents: number | null;
+  laborCostCents: number;
+  otherCostCents: number;
+  productCostCents: number | null;
+  grossMarginCents: number | null;
+  grossMarginPercent: number | null;
+  costStatus: "calculated" | "incomplete" | "missing_recipe";
+  recipe: AdminProduct["recipe"];
+};
+
+export function getAdminProductCost(productId: string) {
+  return apiGet<{ productCost: AdminProductCost }>(`/admin/products/${productId}/cost`);
+}
+
+export function createAdminProduct(input: CreateAdminProductInput) {
+  return apiPost<{ product: AdminProduct }>("/admin/products", input);
+}
+
+export function updateAdminProduct(productId: string, input: CreateAdminProductInput) {
+  return apiPut<{ product: AdminProduct }>(`/admin/products/${productId}`, input);
+}
+
+export type AdminRecipeIngredient = {
+  inventoryItemId: string;
+  quantity: number;
+  unit: InventoryUnitValue;
+  preparationNote?: string | null;
+  unitCostCents: number | null;
+  ingredientCostCents: number | null;
+  costStatus: "calculated" | "missing_inventory" | "missing_unit_cost" | "unit_not_available";
+  item: {
+    _id: string;
+    name: string;
+    sku: string;
+    category: string;
+    baseUnit: string;
+  } | null;
+};
+
+export type AdminRecipe = {
+  _id: string;
+  name: string;
+  code: string;
+  status: RecipeStatusValue;
+  version: number;
+  yieldQuantity: number;
+  yieldUnit: InventoryUnitValue;
+  totalIngredientCostCents: number | null;
+  costPerYieldCents: number | null;
+  costStatus: "calculated" | "incomplete";
+  ingredients: AdminRecipeIngredient[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type CreateAdminRecipeInput = {
+  name: string;
+  code: string;
+  status: RecipeStatusValue;
+  version: number;
+  yieldQuantity: number;
+  yieldUnit: InventoryUnitValue;
+  ingredients: Array<{
+    inventoryItemId: string;
+    quantity: number;
+    unit: InventoryUnitValue;
+    preparationNote?: string;
+  }>;
+};
+
+export function getAdminRecipes() {
+  return apiGet<{ recipes: AdminRecipe[] }>("/admin/recipes");
+}
+
+export function getAdminRecipe(recipeId: string) {
+  return apiGet<{ recipe: AdminRecipe }>(`/admin/recipes/${recipeId}`);
+}
+
+export function createAdminRecipe(input: CreateAdminRecipeInput) {
+  return apiPost<{ recipe: AdminRecipe }>("/admin/recipes", input);
+}
+
+export function updateAdminRecipe(recipeId: string, input: CreateAdminRecipeInput) {
+  return apiPut<{ recipe: AdminRecipe }>(`/admin/recipes/${recipeId}`, input);
 }
 
 export type AdminStore = {
@@ -185,6 +381,194 @@ export type AssignStoreManagerResult = AdminStoreDetail & {
 
 export function getAdminStores() {
   return apiGet<AdminStoreList>("/admin/stores");
+}
+
+export type AdminInventoryStoreStock = {
+  _id: string;
+  store: {
+    _id: string;
+    name: string;
+    storeNumber: string;
+    slug: string;
+    status: string;
+  } | null;
+  quantityOnHand: number;
+  reorderPoint: number;
+  parLevel: number;
+  status: string;
+  lastCountedAt?: string | null;
+  lastRequestedAt?: string | null;
+};
+
+export type AdminInventoryItem = {
+  _id: string;
+  name: string;
+  sku: string;
+  category: string;
+  purchaseUnit?: InventoryUnitValue;
+  baseUnit: string;
+  packagingLevels?: AdminInventoryPackagingLevel[];
+  status: string;
+  description?: string | null;
+  purchasePriceCents?: number | null;
+  smallestUnitCostCents?: number | null;
+  stores: AdminInventoryStoreStock[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type AdminInventoryPackagingLevel = {
+  parentUnit: string;
+  childUnit: string;
+  quantity: number;
+};
+
+export type AdminInventoryList = {
+  inventory: AdminInventoryItem[];
+};
+
+export type AdminInventoryDetail = {
+  inventoryItem: AdminInventoryItem;
+};
+
+export function getAdminInventory() {
+  return apiGet<AdminInventoryList>("/admin/inventory");
+}
+
+export function getAdminInventoryItem(inventoryItemId: string) {
+  return apiGet<AdminInventoryDetail>(`/admin/inventory/${inventoryItemId}`);
+}
+
+export type CreateAdminInventoryItemInput = {
+  name: string;
+  sku: string;
+  category: string;
+  purchaseUnit: InventoryUnitValue;
+  baseUnit: InventoryUnitValue;
+  packagingLevels: AdminInventoryPackagingLevel[];
+  purchasePriceCents: number;
+  storeId: string;
+  initialStockQuantity: number;
+  status: InventoryItemStatusValue;
+  description?: string;
+};
+
+export function createAdminInventoryItem(input: CreateAdminInventoryItemInput) {
+  return apiPost<AdminInventoryDetail>("/admin/inventory", input);
+}
+
+export type UpdateAdminInventoryItemInput = {
+  name: string;
+  sku: string;
+  category: string;
+  purchaseUnit: InventoryUnitValue;
+  baseUnit: InventoryUnitValue;
+  packagingLevels: AdminInventoryPackagingLevel[];
+  purchasePriceCents: number;
+  status: InventoryItemStatusValue;
+};
+
+export function updateAdminInventoryItem(inventoryItemId: string, input: UpdateAdminInventoryItemInput) {
+  return apiPatch<AdminInventoryDetail>(`/admin/inventory/${inventoryItemId}`, input);
+}
+
+export function updateAdminInventoryPackaging(
+  inventoryItemId: string,
+  packagingLevels: AdminInventoryPackagingLevel[],
+) {
+  return apiPatch<AdminInventoryDetail>(`/admin/inventory/${inventoryItemId}/packaging`, { packagingLevels });
+}
+
+export type UpdateAdminInventoryStockInput = {
+  quantityOnHand: number;
+  reorderPoint: number;
+  parLevel: number;
+  status: InventoryStockStatusValue;
+};
+
+export function updateAdminInventoryStock(
+  inventoryItemId: string,
+  storeId: string,
+  input: UpdateAdminInventoryStockInput,
+) {
+  return apiPatch<AdminInventoryDetail>(`/admin/inventory/${inventoryItemId}/stores/${storeId}/stock`, input);
+}
+
+export type AdminInventoryRequestLine = {
+  _id: string;
+  inventoryItemId: string;
+  item: {
+    _id: string;
+    name: string;
+    sku: string;
+    category: string;
+    baseUnit: string;
+  } | null;
+  requestedQuantity: number;
+  approvedQuantity: number | null;
+  fulfilledQuantity: number;
+  availableQuantity: number | null;
+  status: string;
+  notes?: string | null;
+};
+
+export type AdminInventoryRequest = {
+  _id: string;
+  requestNumber: string;
+  status: string;
+  store: {
+    _id: string;
+    name: string;
+    storeNumber: string;
+    slug: string;
+    status: string;
+  } | null;
+  requestedBy: {
+    _id: string;
+    displayName?: string | null;
+    employeeCode?: string | null;
+    role: string;
+    status: string;
+  } | null;
+  station: {
+    _id: string;
+    name: string;
+    code: string;
+    status: string;
+  } | null;
+  submittedAt?: string | null;
+  resolvedAt?: string | null;
+  notes?: string | null;
+  lines: AdminInventoryRequestLine[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export function getAdminInventoryRequests(status?: string) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiGet<{ requests: AdminInventoryRequest[] }>(`/admin/inventory-requests${query}`);
+}
+
+export function getAdminInventoryRequest(inventoryRequestId: string) {
+  return apiGet<{ request: AdminInventoryRequest }>(`/admin/inventory-requests/${inventoryRequestId}`);
+}
+
+export function decideAdminInventoryRequest(
+  inventoryRequestId: string,
+  decision: "approve" | "reject",
+  notes?: string,
+) {
+  return apiPatch<{ request: AdminInventoryRequest }>(`/admin/inventory-requests/${inventoryRequestId}/decision`, {
+    decision,
+    notes,
+  });
+}
+
+export function fulfillAdminInventoryRequest(
+  inventoryRequestId: string,
+  lines: Array<{ lineId: string; quantity: number }>,
+) {
+  return apiPatch<{ request: AdminInventoryRequest }>(`/admin/inventory-requests/${inventoryRequestId}/fulfillment`, { lines });
 }
 
 export function getAdminStore(storeId: string) {
