@@ -68,6 +68,8 @@ import { EmptyState, ErrorState, LoadingState } from "../components/PageStates";
 import type { AppRoute } from "../routes";
 import { ProductManagementPage } from "./ProductManagementPage";
 import { RecipeManagementPage } from "./RecipeManagementPage";
+import { ManagerWarehousePage } from "./ManagerWarehousePage";
+import { WarehouseManagementPage } from "./WarehouseManagementPage";
 
 type ScreenType = "list" | "detail" | "create" | "edit";
 
@@ -110,12 +112,20 @@ export function ResourcePage({ pathname, route, user, onNavigate }: ResourcePage
     return <AdminInventoryRequestPage />;
   }
 
+  if (route.key === "warehouse") {
+    return <WarehouseManagementPage pathname={pathname} onNavigate={onNavigate} />;
+  }
+
   if (route.key === "store-employees") {
     return <ManagerEmployeesPage pathname={pathname} user={user} onNavigate={onNavigate} />;
   }
 
   if (route.key === "manager-inventory-requests") {
     return <ManagerInventoryRequestPage user={user} onNavigate={onNavigate} />;
+  }
+
+  if (route.key === "manager-warehouse") {
+    return <ManagerWarehousePage user={user} onNavigate={onNavigate} />;
   }
 
   if (route.key === "store-manager") {
@@ -696,9 +706,10 @@ function StoreManagerWorkspacePage({ user, onNavigate }: { user: SessionUser; on
       {summary ? <StoreSummaryPanel summary={summary} /> : null}
       <section className="related-panel" aria-label="Store Manager actions">
         <h3>Daily operations</h3>
-        <p className="form-hint">Use the assigned-store tools below to request replenishment and review your store team.</p>
+        <p className="form-hint">Use the assigned-store tools below to request replenishment, receive warehouse deliveries, and review your store team.</p>
         <div className="form-actions">
           <button type="button" onClick={() => onNavigate("/store-manager/inventory-requests")}>Inventory Requests</button>
+          <button type="button" onClick={() => onNavigate("/store-manager/warehouse")}>Receiving & Returns</button>
           <button type="button" className="secondary-button" onClick={() => onNavigate("/store-manager/employees")}>Employees</button>
         </div>
       </section>

@@ -1,5 +1,4 @@
-import { apiGet } from "./client";
-import { apiPost } from "./client";
+import { apiGet, apiPatch, apiPost } from "./client";
 import type { AdminStorePerson, StoreEmployeeList, StoreEmployeeDetail } from "./admin";
 
 export type StoreSummary = {
@@ -126,4 +125,46 @@ export function getManagerStoreEmployees(storeId: string) {
 
 export function getManagerStoreEmployee(storeId: string, employeeId: string) {
   return apiGet<ManagerStoreEmployeeDetail>(`/manager/stores/${storeId}/employees/${employeeId}`);
+}
+
+export type ManagerWarehouseTransfer = {
+  _id: string;
+  transferNumber: string;
+  status: string;
+  store: { _id: string; name: string; storeNumber: string; slug: string; status?: string } | null;
+  lines: Array<{ _id: string; inventoryItemId: string; item: { _id: string; name: string; sku: string; baseUnit: string; purchaseUnit?: string } | null; quantity: number; unit: string; receivedQuantity: number; discrepancyReason?: string | null }>;
+  requestedAt?: string;
+  dispatchedAt?: string;
+  receivedAt?: string;
+  notes?: string | null;
+  createdAt?: string;
+};
+
+export type ManagerWarehouseReturn = {
+  _id: string;
+  returnNumber: string;
+  status: string;
+  store: { _id: string; name: string; storeNumber: string; slug: string } | null;
+  item: { _id: string; name: string; sku: string; baseUnit: string } | null;
+  quantity: number;
+  unit: string;
+  reason: string;
+  notes?: string | null;
+  createdAt?: string;
+};
+
+export function getManagerWarehouseTransfers(storeId: string) {
+  return apiGet<{ transfers: ManagerWarehouseTransfer[] }>(`/manager/stores/${storeId}/inventory-transfers`);
+}
+
+export function receiveManagerWarehouseTransfer(storeId: string, transferId: string, lines: Array<{ lineId: string; receivedQuantity: number; discrepancyReason?: string }>) {
+  return apiPatch<{ transfer: ManagerWarehouseTransfer }>(`/manager/stores/${storeId}/inventory-transfers/${transferId}/receive`, { lines });
+}
+
+export function getManagerWarehouseReturns(storeId: string) {
+  return apiGet<{ returns: ManagerWarehouseReturn[] }>(`/manager/stores/${storeId}/warehouse-returns`);
+}
+
+export function createManagerWarehouseReturn(storeId: string, input: { inventoryItemId: string; quantity: number; unit: string; reason: string; notes?: string }) {
+  return apiPost<{ return: ManagerWarehouseReturn }>(`/manager/stores/${storeId}/warehouse-returns`, input);
 }

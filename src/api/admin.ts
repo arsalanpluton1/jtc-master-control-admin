@@ -69,6 +69,11 @@ export const inventoryUnitOptions = [
   { value: "ounce", label: "Ounce" },
   { value: "pound", label: "Pound" },
   { value: "case", label: "Case" },
+  { value: "piece", label: "Piece" },
+  { value: "box", label: "Box" },
+  { value: "pack", label: "Pack" },
+  { value: "dozen", label: "Dozen" },
+  { value: "carton", label: "Carton" },
 ] as const;
 
 export type InventoryUnitValue = (typeof inventoryUnitOptions)[number]["value"];
@@ -405,11 +410,18 @@ export type AdminInventoryItem = {
   name: string;
   sku: string;
   category: string;
+  subcategory?: string | null;
+  barcode?: string | null;
+  supplier?: string | null;
   purchaseUnit?: InventoryUnitValue;
   baseUnit: string;
   packagingLevels?: AdminInventoryPackagingLevel[];
   status: string;
   description?: string | null;
+  imageUrl?: string | null;
+  minimumStockLevel?: number;
+  maximumStockLevel?: number | null;
+  notes?: string | null;
   purchasePriceCents?: number | null;
   smallestUnitCostCents?: number | null;
   stores: AdminInventoryStoreStock[];
@@ -443,6 +455,9 @@ export type CreateAdminInventoryItemInput = {
   name: string;
   sku: string;
   category: string;
+  subcategory?: string;
+  barcode?: string;
+  supplier?: string;
   purchaseUnit: InventoryUnitValue;
   baseUnit: InventoryUnitValue;
   packagingLevels: AdminInventoryPackagingLevel[];
@@ -451,6 +466,10 @@ export type CreateAdminInventoryItemInput = {
   initialStockQuantity: number;
   status: InventoryItemStatusValue;
   description?: string;
+  imageUrl?: string;
+  minimumStockLevel?: number;
+  maximumStockLevel?: number;
+  notes?: string;
 };
 
 export function createAdminInventoryItem(input: CreateAdminInventoryItemInput) {
@@ -461,11 +480,18 @@ export type UpdateAdminInventoryItemInput = {
   name: string;
   sku: string;
   category: string;
+  subcategory?: string;
+  barcode?: string;
+  supplier?: string;
   purchaseUnit: InventoryUnitValue;
   baseUnit: InventoryUnitValue;
   packagingLevels: AdminInventoryPackagingLevel[];
   purchasePriceCents: number;
   status: InventoryItemStatusValue;
+  imageUrl?: string;
+  minimumStockLevel?: number;
+  maximumStockLevel?: number;
+  notes?: string;
 };
 
 export function updateAdminInventoryItem(inventoryItemId: string, input: UpdateAdminInventoryItemInput) {
@@ -699,4 +725,166 @@ export type CreateStoreEmployeeInput = {
 
 export function createStoreEmployee(storeId: string, input: CreateStoreEmployeeInput) {
   return apiPost<AdminStoreDetail>(`/admin/stores/${storeId}/employees`, input);
+}
+
+export type WarehouseStockRow = {
+  _id: string;
+  warehouseCode: string;
+  inventoryItemId: string;
+  quantityOnHand: number;
+  reorderPoint: number;
+  parLevel: number;
+  status: string;
+  item: {
+    _id: string;
+    name: string;
+    sku: string;
+    barcode?: string | null;
+    category: string;
+    subcategory?: string | null;
+    supplier?: string | null;
+    baseUnit: string;
+    purchaseUnit?: string;
+    purchasePriceCents?: number;
+    smallestUnitCostCents?: number | null;
+    minimumStockLevel?: number;
+    maximumStockLevel?: number | null;
+  } | null;
+  updatedAt?: string;
+};
+
+export type WarehouseTransaction = {
+  _id: string;
+  transactionNumber: string;
+  transactionType: string;
+  item: { _id: string; name: string; sku: string; baseUnit: string } | null;
+  quantity: number;
+  unit: string;
+  locationType: "warehouse" | "store";
+  location: { code?: string; name: string; storeNumber?: string } | null;
+  quantityBefore: number;
+  quantityAfter: number;
+  quantityDelta: number;
+  sourceLabel?: string | null;
+  destinationLabel?: string | null;
+  referenceNumber?: string | null;
+  supplier?: string | null;
+  invoiceNumber?: string | null;
+  batchNumber?: string | null;
+  expiryDate?: string | null;
+  reason?: string | null;
+  notes?: string | null;
+  performedBy?: { displayName: string; email: string } | null;
+  createdAt?: string;
+};
+
+export type WarehouseOverview = {
+  warehouse: { code: string; name: string };
+  counts: { products: number; totalStockUnits: number; lowStockProducts: number; outOfStockProducts: number; pendingTransfers: number; activeStores: number };
+  inventoryValueCents: number;
+  categories: Array<{ category: string; quantity: number }>;
+  recentTransactions: WarehouseTransaction[];
+};
+
+export type WarehouseTransfer = {
+  _id: string;
+  transferNumber: string;
+  status: string;
+  store: { _id: string; name: string; storeNumber: string; slug: string; status?: string } | null;
+  lines: Array<{ _id: string; inventoryItemId: string; item: { _id: string; name: string; sku: string; baseUnit: string; purchaseUnit?: string } | null; quantity: number; unit: string; receivedQuantity: number; discrepancyReason?: string | null }>;
+  requestedAt?: string;
+  approvedAt?: string;
+  dispatchedAt?: string;
+  receivedAt?: string;
+  notes?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type WarehouseReturn = {
+  _id: string;
+  returnNumber: string;
+  status: string;
+  store: { _id: string; name: string; storeNumber: string; slug: string } | null;
+  item: { _id: string; name: string; sku: string; baseUnit: string } | null;
+  quantity: number;
+  unit: string;
+  reason: string;
+  notes?: string | null;
+  createdBy?: { _id: string; displayName: string; email: string } | null;
+  receivedAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type WarehouseStoreStockRow = {
+  _id: string;
+  inventoryItemId: string;
+  quantityOnHand: number;
+  reorderPoint: number;
+  parLevel: number;
+  status: string;
+  store: { _id: string; name: string; storeNumber: string; slug: string } | null;
+  item: { _id: string; name: string; sku: string; category: string; baseUnit: string; purchaseUnit?: string; minimumStockLevel?: number } | null;
+};
+
+export function getWarehouseOverview() {
+  return apiGet<WarehouseOverview>("/admin/warehouse/overview");
+}
+
+export function getWarehouseStock(filters: { search?: string; category?: string; status?: string } = {}) {
+  const query = new URLSearchParams();
+  if (filters.search) query.set("search", filters.search);
+  if (filters.category) query.set("category", filters.category);
+  if (filters.status) query.set("status", filters.status);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return apiGet<{ warehouse: { code: string; name: string }; stock: WarehouseStockRow[] }>(`/admin/warehouse/stock${suffix}`);
+}
+
+export function getWarehouseStoreStock(storeId?: string) {
+  return apiGet<{ inventory: WarehouseStoreStockRow[] }>(`/admin/warehouse/store-stock${storeId ? `?storeId=${encodeURIComponent(storeId)}` : ""}`);
+}
+
+export function getWarehouseLedger(filters: { transactionType?: string; storeId?: string } = {}) {
+  const query = new URLSearchParams();
+  if (filters.transactionType) query.set("transactionType", filters.transactionType);
+  if (filters.storeId) query.set("storeId", filters.storeId);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return apiGet<{ transactions: WarehouseTransaction[] }>(`/admin/warehouse/ledger${suffix}`);
+}
+
+export function createWarehouseReceipt(input: { inventoryItemId: string; quantity: number; unit: string; supplier: string; invoiceNumber?: string; batchNumber?: string; expiryDate?: string; notes?: string }) {
+  return apiPost<{ receipt: { transactionNumber: string; warehouseQuantity: number } }>("/admin/warehouse/receipts", input);
+}
+
+export function createWarehouseAdjustment(input: { inventoryItemId: string; quantityDelta: number; locationType: "warehouse" | "store"; storeId?: string; transactionType?: string; reason: string; referenceNumber?: string; notes?: string }) {
+  return apiPost<{ adjustment: { transactionNumber: string; quantityBefore: number; quantityAfter: number; quantityDelta: number } }>("/admin/warehouse/adjustments", input);
+}
+
+export function createWarehouseStockCount(input: { inventoryItemId: string; physicalQuantity: number; locationType: "warehouse" | "store"; storeId?: string; reason: string; notes?: string }) {
+  return apiPost<{ stockCount: { transactionNumber: string; systemQuantity: number; physicalQuantity: number; difference: number; quantityAfter: number } }>("/admin/warehouse/stock-counts", input);
+}
+
+export function getWarehouseTransfers(status?: string) {
+  return apiGet<{ transfers: WarehouseTransfer[] }>(`/admin/warehouse/transfers${status ? `?status=${encodeURIComponent(status)}` : ""}`);
+}
+
+export function createWarehouseTransfer(input: { destinationStoreId: string; notes?: string; lines: Array<{ inventoryItemId: string; quantity: number; unit: string }> }) {
+  return apiPost<{ transfer: WarehouseTransfer }>("/admin/warehouse/transfers", input);
+}
+
+export function decideWarehouseTransfer(transferId: string, decision: "approve" | "reject", notes?: string) {
+  return apiPatch<{ transfer: WarehouseTransfer }>(`/admin/warehouse/transfers/${transferId}/decision`, { decision, notes });
+}
+
+export function dispatchWarehouseTransfer(transferId: string) {
+  return apiPatch<{ transfer: WarehouseTransfer }>(`/admin/warehouse/transfers/${transferId}/dispatch`, {});
+}
+
+export function getWarehouseReturns(status?: string) {
+  return apiGet<{ returns: WarehouseReturn[] }>(`/admin/warehouse/returns${status ? `?status=${encodeURIComponent(status)}` : ""}`);
+}
+
+export function receiveWarehouseReturn(returnId: string) {
+  return apiPatch<{ return: WarehouseReturn }>(`/admin/warehouse/returns/${returnId}/receive`, {});
 }

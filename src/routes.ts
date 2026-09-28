@@ -7,7 +7,9 @@ export type RouteKey =
   | "inventory-requests"
   | "store-manager"
   | "manager-inventory-requests"
-  | "store-employees";
+  | "store-employees"
+  | "warehouse"
+  | "manager-warehouse";
 
 export type AppRoute = {
   key: RouteKey;
@@ -75,6 +77,15 @@ export const appRoutes: AppRoute[] = [
     area: "Admin",
   },
   {
+    key: "warehouse",
+    path: "/warehouse",
+    label: "Warehouse & Inventory",
+    eyebrow: "Central Warehouse",
+    title: "Warehouse & Inventory",
+    description: "Receive stock, move it to stores, manage counts, and review the complete inventory ledger.",
+    area: "Admin",
+  },
+  {
     key: "store-manager",
     path: "/store-manager",
     label: "Store Manager",
@@ -99,6 +110,15 @@ export const appRoutes: AppRoute[] = [
     eyebrow: "Store Team",
     title: "Employees",
     description: "View employees assigned to your store.",
+    area: "Store Manager",
+  },
+  {
+    key: "manager-warehouse",
+    path: "/store-manager/warehouse",
+    label: "Receiving & Returns",
+    eyebrow: "Store Inventory",
+    title: "Receiving & Returns",
+    description: "Confirm warehouse deliveries, report differences, and request returns to the Central Warehouse.",
     area: "Store Manager",
   },
 ];
